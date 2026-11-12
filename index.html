@@ -46,6 +46,7 @@
   .prod.sin { opacity: .5; }
   .prod.sin .mas { display: none; }
   .etq-sin { color: #a33; font-size: 12px; font-weight: 600; margin-top: 4px; }
+  .etq-ult { color: var(--acento); font-size: 12px; font-weight: 600; margin-top: 4px; }
   .vacio { text-align: center; color: var(--gris); padding: 40px 10px; }
   .barra { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); z-index: 10; pointer-events: none; }
   .barra button { pointer-events: auto; max-width: 868px; margin: 0 auto; display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; background: var(--verde); color: #fff; border: 0; border-radius: 14px; padding: 15px 18px; font-size: 16px; font-weight: 700; box-shadow: 0 6px 20px rgba(0,0,0,.2); }
@@ -53,6 +54,7 @@
   .velo { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; display: flex; align-items: flex-end; justify-content: center; }
   .hoja { background: #fff; width: 100%; max-width: 640px; max-height: 92vh; overflow-y: auto; border-radius: 20px 20px 0 0; padding: 0 0 calc(16px + env(safe-area-inset-bottom)); animation: sube .18s ease-out; }
   @media (min-width: 680px) { .velo { align-items: center; } .hoja { border-radius: 20px; } }
+    .hoja.quieta { animation: none; }
   @keyframes sube { from { transform: translateY(40px); opacity: .6; } to { transform: none; opacity: 1; } }
   .hoja-cab { position: sticky; top: 0; background: #fff; display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; border-bottom: 1px solid var(--borde); z-index: 1; }
   .hoja-cab h3 { margin: 0; font-size: 18px; }
@@ -134,7 +136,8 @@
   // Carrito (se recuerda en este celular si el navegador lo permite).
   let carrito = {};
   try { carrito = JSON.parse(localStorage.getItem('casiano-carrito') || '{}'); } catch (e) { carrito = {}; }
-  Object.keys(carrito).forEach((id) => { if (!porId[id] || !porId[id].hayStock) delete carrito[id]; });
+  const tope = (p) => (typeof p.max === 'number' ? p.max : 99);
+  Object.keys(carrito).forEach((id) => { const p = porId[id]; if (!p || !p.hayStock) delete carrito[id]; else carrito[id] = Math.min(carrito[id], tope(p)); });
   let datos = { modo: N.envio > 0 ? 'envio' : 'retiro', nombre: '', direccion: '', pago: 'Efectivo', notas: '' };
   try { Object.assign(datos, JSON.parse(localStorage.getItem('casiano-datos') || '{}')); } catch (e) { /* nada */ }
   const guardar = () => { try { localStorage.setItem('casiano-carrito', JSON.stringify(carrito)); localStorage.setItem('casiano-datos', JSON.stringify(datos)); } catch (e) { /* sin almacenamiento */ } };
@@ -157,7 +160,7 @@
     return `<button class="prod${p.hayStock ? '' : ' sin'}" data-id="${esc(p.id)}"${p.hayStock ? '' : ' disabled'}>
       <div class="txt"><div class="nom">${esc(p.nombre)}</div>
         ${p.descripcion ? `<div class="desc">${esc(p.descripcion)}</div>` : ''}
-        ${p.hayStock ? '' : '<div class="etq-sin">Sin stock por ahora</div>'}
+        ${p.hayStock ? (!esKg(p) && tope(p) <= 3 ? `<div class="etq-ult">${tope(p) === 1 ? 'Última unidad' : `Últimas ${tope(p)} unidades`}</div>` : '') : '<div class="etq-sin">Sin stock por ahora</div>'}
         <div class="precio">${precioTxt(p)}</div></div>
       <div class="foto">${p.foto ? `<img src="${esc(p.foto)}" alt="" loading="lazy">` : emoji(p)}
         ${c ? `<span class="cant-badge">${fmtCant(p, c)}</span>` : ''}<span class="mas">+</span></div>
@@ -184,14 +187,19 @@
   }
 
   const capa = $('#capa');
-  function abrir(html) { capa.innerHTML = `<div class="velo"><div class="hoja">${html}</div></div>`; document.body.style.overflow = 'hidden'; }
+  function abrir(html) {
+    const yaAbierta = !!capa.firstChild, scroll = yaAbierta ? ($('.hoja', capa) || {}).scrollTop || 0 : 0;
+    capa.innerHTML = `<div class="velo"><div class="hoja${yaAbierta ? ' quieta' : ''}">${html}</div></div>`;
+    if (scroll) $('.hoja', capa).scrollTop = scroll;
+    document.body.style.overflow = 'hidden';
+  }
   function cerrar() { capa.innerHTML = ''; document.body.style.overflow = ''; }
   capa.addEventListener('click', (e) => { if (e.target.classList.contains('velo') || e.target.closest('.cerrar')) cerrar(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') cerrar(); });
 
   function verProducto(id) {
     const p = porId[id];
-    let c = carrito[id] || paso(p);
+    let c = Math.min(carrito[id] || paso(p), tope(p)), aviso = '';
     const pintar = () => {
       abrir(`<div class="hoja-cab"><h3>${esc(p.nombre)}</h3><button class="cerrar" aria-label="Cerrar">✕</button></div>
         <div class="det-foto">${p.foto ? `<img src="${esc(p.foto)}" alt="">` : emoji(p)}</div>
@@ -200,13 +208,15 @@
           <p><b style="color:var(--tinta);font-size:18px">${precioTxt(p)}</b></p>
           ${esKg(p) ? '<p>Se vende suelto: elegí la cantidad de a 250 g.</p>' : ''}
           <div class="stepper"><button data-d="-1" aria-label="Menos">−</button><span>${fmtCant(p, c)}</span><button data-d="1" aria-label="Más">+</button></div>
+          ${aviso ? `<div class="error">${esc(aviso)}</div>` : ''}
           <button class="agregar" data-ok><span>${carrito[id] ? 'Actualizar pedido' : 'Agregar al pedido'}</span><span>${pesos(p.precio * c)}</span></button>
           ${carrito[id] ? '<button class="agregar" data-quitar style="background:#f1ede6;color:#a33;justify-content:center">Quitar del pedido</button>' : ''}
         </div>`);
       $('.stepper', capa).addEventListener('click', (e) => {
         const b = e.target.closest('[data-d]'); if (!b) return;
-        c = Math.max(paso(p), Math.round((c + paso(p) * Number(b.dataset.d)) * 100) / 100);
-        if (!esKg(p)) c = Math.min(c, 99);
+        const n = Math.max(paso(p), Math.round((c + paso(p) * Number(b.dataset.d)) * 100) / 100);
+        aviso = n > tope(p) ? `No tenemos más stock: podés pedir hasta ${fmtCant(p, tope(p))}${esKg(p) ? '' : (tope(p) === 1 ? ' unidad' : ' unidades')}.` : '';
+        c = Math.min(n, tope(p));
         pintar();
       });
       $('[data-ok]', capa).addEventListener('click', () => { carrito[id] = c; guardar(); cerrar(); refrescar(); });
@@ -246,9 +256,10 @@
       leer();
       const id = s.closest('.item').dataset.id, p = porId[id];
       const c = Math.round((carrito[id] + paso(p) * Number(b.dataset.d)) * 100) / 100;
-      if (c <= 0) delete carrito[id]; else carrito[id] = esKg(p) ? c : Math.min(c, 99);
+      let msg = '';
+      if (c <= 0) delete carrito[id]; else { if (c > tope(p)) msg = `De ${p.nombre} podés pedir hasta ${fmtCant(p, tope(p))}.`; carrito[id] = Math.min(c, tope(p)); }
       guardar(); refrescar();
-      if (cantItems()) verPedido(); else cerrar();
+      if (cantItems()) verPedido(msg); else cerrar();
     }));
     capa.querySelectorAll('[data-modo]').forEach((b) => b.addEventListener('click', () => { leer(); datos.modo = b.dataset.modo; guardar(); verPedido(); }));
     $('#enviar', capa).addEventListener('click', () => {
