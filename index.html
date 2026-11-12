@@ -109,9 +109,16 @@
 <div class="barra" id="barra" hidden><button id="verPedido"><span class="n" id="barraN">0</span><span>Ver pedido</span><span id="barraT">$ 0</span></button></div>
 <div id="capa"></div>
 
-<script src="catalogo.js"></script>
 <script>
-(function () {
+// El catálogo se pide siempre fresco (sin memoria del navegador), para ver el stock al día.
+function cargarCatalogo(listo) {
+  const s = document.createElement('script');
+  s.src = 'catalogo.js?t=' + Date.now();
+  s.onload = () => { s.remove(); listo(); };
+  s.onerror = () => { s.remove(); listo(); };
+  document.head.appendChild(s);
+}
+cargarCatalogo(function () {
   const C = window.CATALOGO || { productos: [], negocio: {} };
   const N = Object.assign({ nombre: 'Casiano', whatsapp: '', envio: 0, direccion: '', horarios: '', ciudad: 'Rosario' }, C.negocio || {});
   const $ = (s, el = document) => el.querySelector(s);
@@ -219,7 +226,7 @@
         c = Math.min(n, tope(p));
         pintar();
       });
-      $('[data-ok]', capa).addEventListener('click', () => { carrito[id] = c; guardar(); cerrar(); refrescar(); });
+      $('[data-ok]', capa).addEventListener('click', () => { if (!p.hayStock) { delete carrito[id]; } else carrito[id] = Math.min(c, tope(p)); guardar(); cerrar(); refrescar(); });
       const q2 = $('[data-quitar]', capa); if (q2) q2.addEventListener('click', () => { delete carrito[id]; guardar(); cerrar(); refrescar(); });
     };
     pintar();
@@ -302,7 +309,31 @@
   if (C.actualizado) $('#pie').textContent = `Precios actualizados el ${C.actualizado}. Pueden variar; te confirmamos el total por WhatsApp.`;
   if (!prods.length) $('#lista').innerHTML = '<p class="vacio">Estamos cargando los productos. Volvé en un rato o escribinos por WhatsApp.</p>';
   refrescar();
-})();
+
+  // Cada 2 minutos (y al volver a la pestaña) se actualizan precios y stock sin recargar la página.
+  function actualizarStock() {
+    cargarCatalogo(() => {
+      const nuevo = window.CATALOGO; if (!nuevo || !nuevo.productos) return;
+      const cambiados = [];
+      nuevo.productos.forEach((np) => {
+        const p = porId[np.id]; if (!p) return;
+        if (p.hayStock !== np.hayStock || p.max !== np.max || p.precio !== np.precio) { cambiados.push(p.id); Object.assign(p, { hayStock: np.hayStock, max: np.max, precio: np.precio }); }
+      });
+      if (!cambiados.length) return;
+      Object.keys(carrito).forEach((id) => { const p = porId[id]; if (!p.hayStock) delete carrito[id]; else carrito[id] = Math.min(carrito[id], tope(p)); });
+      guardar();
+      // Solo se reemplazan las tarjetas que cambiaron: la lista no se reordena ni se mueve el scroll.
+      cambiados.forEach((id) => {
+        document.querySelectorAll(`.prod[data-id="${CSS.escape(id)}"]`).forEach((el) => {
+          const t = document.createElement('div'); t.innerHTML = tarjeta(porId[id]).trim(); el.replaceWith(t.firstChild);
+        });
+      });
+      pintarBarra();
+    });
+  }
+  setInterval(actualizarStock, 2 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) actualizarStock(); });
+});
 </script>
 </body>
 </html>
