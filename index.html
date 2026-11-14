@@ -110,7 +110,7 @@
 
 <script>
 // Versión del diseño de esta página (la pone el programa al publicar).
-const VERSION_DISENO = 'dc1e4b9f';
+const VERSION_DISENO = '1acfe4cf';
 // Si el navegador tiene guardada una página vieja, el catálogo (que nunca se cachea) avisa que hay
 // una nueva y se recarga sola con la versión en la dirección, para saltear la copia guardada.
 function revisarDiseno(C) {
@@ -157,16 +157,24 @@ cargarCatalogo(function () {
   let carrito = {};
   try { carrito = JSON.parse(localStorage.getItem('casiano-carrito') || '{}'); } catch (e) { carrito = {}; }
   const tope = (p) => (typeof p.max === 'number' ? p.max : 99);
-  Object.keys(carrito).forEach((id) => { const p = porId[id]; if (!p || !p.hayStock) delete carrito[id]; else carrito[id] = Math.min(carrito[id], tope(p)); });
+  // Un pedido guardado de antes puede tener cantidades que ya no existen (ej.: 250 g de algo que ahora va de a 200 g):
+  // se acomodan al paso actual, para abajo y sin pasar el stock.
+  const acomodar = (p, c) => { const s = p.unidad === 'kg' ? (p.paso || 0.25) : 1; return Math.min(Math.max(s, Math.round(Math.floor(c / s + 1e-9) * s * 100) / 100), tope(p)); };
+  Object.keys(carrito).forEach((id) => { const p = porId[id]; if (!p || !p.hayStock) delete carrito[id]; else carrito[id] = acomodar(p, Number(carrito[id]) || 0); });
   let datos = { modo: N.envio > 0 ? 'envio' : 'retiro', nombre: '', direccion: '', pago: 'Efectivo', notas: '' };
   try { Object.assign(datos, JSON.parse(localStorage.getItem('casiano-datos') || '{}')); } catch (e) { /* nada */ }
   const guardar = () => { try { localStorage.setItem('casiano-carrito', JSON.stringify(carrito)); localStorage.setItem('casiano-datos', JSON.stringify(datos)); } catch (e) { /* sin almacenamiento */ } };
 
   const esKg = (p) => p.unidad === 'kg';
-  const paso = (p) => (esKg(p) ? 0.25 : 1);
+  const paso = (p) => (esKg(p) ? (p.paso || 0.25) : 1);
+  // Descuento por cantidad (ej.: frutos secos, 10 % llevando 1 kg o más del mismo producto).
+  const conDesc = (p, c) => !!p.desc && c >= p.desc.desde;
+  const importe = (p, c) => Math.round(p.precio * c * (conDesc(p, c) ? 1 - p.desc.pct / 100 : 1));
+  const descTxt = (p) => `${p.desc.pct} % de descuento`;
+  const desdeTxt = (p) => fmtCant(p, p.desc.desde);
   const fmtCant = (p, c) => (esKg(p) ? (c < 1 ? `${Math.round(c * 1000)} g` : `${String(c).replace('.', ',')} kg`) : `${c}`);
   const precioTxt = (p) => (esKg(p) ? `${pesos(p.precio)} <small>el kg</small>` : pesos(p.precio));
-  const subtotal = () => Object.entries(carrito).reduce((a, [id, c]) => a + Math.round(porId[id].precio * c), 0);
+  const subtotal = () => Object.entries(carrito).reduce((a, [id, c]) => a + importe(porId[id], c), 0);
   const cantItems = () => Object.keys(carrito).length;
 
   let cat = 'Todo', q = '';
@@ -226,10 +234,11 @@ cargarCatalogo(function () {
         <div class="cuerpo">
           ${p.descripcion ? `<p>${esc(p.descripcion)}</p>` : ''}
           <p><b style="color:var(--tinta);font-size:18px">${precioTxt(p)}</b></p>
-          ${esKg(p) ? '<p>Se vende suelto: elegí la cantidad de a 250 g.</p>' : ''}
+          ${esKg(p) ? `<p>Se vende suelto: elegí la cantidad de a ${Math.round(paso(p) * 1000)} g.</p>` : ''}
+          ${p.desc ? `<p${conDesc(p, c) ? ' style="color:var(--verde);font-weight:700"' : ''}>${conDesc(p, c) ? `✓ ${descTxt(p)} aplicado por llevar ${desdeTxt(p)} o más.` : `Llevando ${desdeTxt(p)} o más, ${descTxt(p)}.`}</p>` : ''}
           <div class="stepper"><button data-d="-1" aria-label="Menos">−</button><span>${fmtCant(p, c)}</span><button data-d="1" aria-label="Más">+</button></div>
           ${aviso ? `<div class="error">${esc(aviso)}</div>` : ''}
-          <button class="agregar" data-ok><span>${carrito[id] ? 'Actualizar pedido' : 'Agregar al pedido'}</span><span>${pesos(p.precio * c)}</span></button>
+          <button class="agregar" data-ok><span>${carrito[id] ? 'Actualizar pedido' : 'Agregar al pedido'}</span><span>${pesos(importe(p, c))}</span></button>
           ${carrito[id] ? '<button class="agregar" data-quitar style="background:#f1ede6;color:#a33;justify-content:center">Quitar del pedido</button>' : ''}
         </div>`);
       $('.stepper', capa).addEventListener('click', (e) => {
@@ -251,7 +260,7 @@ cargarCatalogo(function () {
     abrir(`<div class="hoja-cab"><h3>Tu pedido</h3><button class="cerrar" aria-label="Cerrar">✕</button></div>
       <div class="cuerpo">
         ${Object.entries(carrito).map(([id, c]) => { const p = porId[id]; return `<div class="item" data-id="${esc(id)}">
-          <div class="t"><b>${esc(p.nombre)}</b><small>${pesos(p.precio * c)}</small></div>
+          <div class="t"><b>${esc(p.nombre)}</b><small>${pesos(importe(p, c))}${conDesc(p, c) ? ` · ${descTxt(p)}` : ''}</small></div>
           <div class="stepper"><button data-d="-1">−</button><span>${fmtCant(p, c)}</span><button data-d="1">+</button></div></div>`; }).join('')}
         <div class="opciones">
           ${N.envio > 0 ? `<button class="opcion${datos.modo === 'envio' ? ' activo' : ''}" data-modo="envio"><b>Envío</b><small>${pesos(N.envio)} · en el barrio</small></button>` : ''}
@@ -293,7 +302,7 @@ cargarCatalogo(function () {
       leer();
       if (!datos.nombre.trim()) return verPedido('Poné tu nombre así sabemos de quién es el pedido.');
       if (datos.modo === 'envio' && !datos.direccion.trim()) return verPedido('Poné la dirección de entrega.');
-      const lineas = Object.entries(carrito).map(([id, c]) => { const p = porId[id]; return `• ${fmtCant(p, c)}${esKg(p) ? '' : ' x'} ${p.nombre} — ${pesos(p.precio * c)}`; });
+      const lineas = Object.entries(carrito).map(([id, c]) => { const p = porId[id]; return `• ${fmtCant(p, c)}${esKg(p) ? '' : ' x'} ${p.nombre} — ${pesos(importe(p, c))}${conDesc(p, c) ? ` (${descTxt(p)})` : ''}`; });
       const txt = [`Hola Casiano! Quiero hacer este pedido:`, '', ...lineas, '',
         `Productos: ${pesos(sub)}`,
         datos.modo === 'envio' ? `Envío: ${pesos(envio)}` : 'Retiro en el local',
@@ -338,10 +347,10 @@ cargarCatalogo(function () {
       const cambiados = [];
       nuevo.productos.forEach((np) => {
         const p = porId[np.id]; if (!p) return;
-        if (p.hayStock !== np.hayStock || p.max !== np.max || p.precio !== np.precio) { cambiados.push(p.id); Object.assign(p, { hayStock: np.hayStock, max: np.max, precio: np.precio }); }
+        if (p.hayStock !== np.hayStock || p.max !== np.max || p.precio !== np.precio || p.paso !== np.paso || JSON.stringify(p.desc) !== JSON.stringify(np.desc)) { cambiados.push(p.id); Object.assign(p, { hayStock: np.hayStock, max: np.max, precio: np.precio, paso: np.paso, desc: np.desc }); }
       });
       if (!cambiados.length) return;
-      Object.keys(carrito).forEach((id) => { const p = porId[id]; if (!p.hayStock) delete carrito[id]; else carrito[id] = Math.min(carrito[id], tope(p)); });
+      Object.keys(carrito).forEach((id) => { const p = porId[id]; if (!p.hayStock) delete carrito[id]; else carrito[id] = acomodar(p, carrito[id]); });
       guardar();
       // Solo se reemplazan las tarjetas que cambiaron: la lista no se reordena ni se mueve el scroll.
       cambiados.forEach((id) => {
