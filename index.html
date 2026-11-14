@@ -109,6 +109,19 @@
 <div id="capa"></div>
 
 <script>
+// Versión del diseño de esta página (la pone el programa al publicar).
+const VERSION_DISENO = 'dc1e4b9f';
+// Si el navegador tiene guardada una página vieja, el catálogo (que nunca se cachea) avisa que hay
+// una nueva y se recarga sola con la versión en la dirección, para saltear la copia guardada.
+function revisarDiseno(C) {
+  if (!C || !C.diseno || C.diseno === VERSION_DISENO) return false;
+  try { // una sola recarga por versión, así nunca entra en un bucle
+    if (sessionStorage.getItem('casiano-diseno') === C.diseno) return false;
+    sessionStorage.setItem('casiano-diseno', C.diseno);
+  } catch (e) { /* sin almacenamiento: se recarga igual, una vez por visita */ }
+  location.replace(location.pathname + '?v=' + encodeURIComponent(C.diseno));
+  return true;
+}
 // El catálogo se pide siempre fresco (sin memoria del navegador), para ver el stock al día.
 function cargarCatalogo(listo) {
   const s = document.createElement('script');
@@ -119,6 +132,7 @@ function cargarCatalogo(listo) {
 }
 cargarCatalogo(function () {
   const C = window.CATALOGO || { productos: [], negocio: {} };
+  if (revisarDiseno(C)) return; // hay una versión nueva de la página: se recarga y arranca de cero
   const N = Object.assign({ nombre: 'Casiano', whatsapp: '', envio: 0, direccion: '', horarios: '', ciudad: 'Rosario' }, C.negocio || {});
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -320,6 +334,7 @@ cargarCatalogo(function () {
   function actualizarStock() {
     cargarCatalogo(() => {
       const nuevo = window.CATALOGO; if (!nuevo || !nuevo.productos) return;
+      if (revisarDiseno(nuevo)) return; // se publicó una página nueva mientras esta estaba abierta
       const cambiados = [];
       nuevo.productos.forEach((np) => {
         const p = porId[np.id]; if (!p) return;
