@@ -110,7 +110,7 @@
 
 <script>
 // Versión del diseño de esta página (la pone el programa al publicar).
-const VERSION_DISENO = '1acfe4cf';
+const VERSION_DISENO = '567cf3bc';
 // Si el navegador tiene guardada una página vieja, el catálogo (que nunca se cachea) avisa que hay
 // una nueva y se recarga sola con la versión en la dirección, para saltear la copia guardada.
 function revisarDiseno(C) {
@@ -234,8 +234,7 @@ cargarCatalogo(function () {
         <div class="cuerpo">
           ${p.descripcion ? `<p>${esc(p.descripcion)}</p>` : ''}
           <p><b style="color:var(--tinta);font-size:18px">${precioTxt(p)}</b></p>
-          ${esKg(p) ? `<p>Se vende suelto: elegí la cantidad de a ${Math.round(paso(p) * 1000)} g.</p>` : ''}
-          ${p.desc ? `<p${conDesc(p, c) ? ' style="color:var(--verde);font-weight:700"' : ''}>${conDesc(p, c) ? `✓ ${descTxt(p)} aplicado por llevar ${desdeTxt(p)} o más.` : `Llevando ${desdeTxt(p)} o más, ${descTxt(p)}.`}</p>` : ''}
+          ${esKg(p) ? `<p>Se vende suelto: elegí la cantidad de a ${Math.round(paso(p) * 1000)} g.${p.desc ? ` <b style="color:var(--verde)">${conDesc(p, c) ? `✓ ${descTxt(p)} aplicado por llevar ${desdeTxt(p)} o más.` : `${descTxt(p).replace(/^(\d+) %/, '$1%')} comprando ${desdeTxt(p)} o más.`}</b>` : ''}</p>` : ''}
           <div class="stepper"><button data-d="-1" aria-label="Menos">−</button><span>${fmtCant(p, c)}</span><button data-d="1" aria-label="Más">+</button></div>
           ${aviso ? `<div class="error">${esc(aviso)}</div>` : ''}
           <button class="agregar" data-ok><span>${carrito[id] ? 'Actualizar pedido' : 'Agregar al pedido'}</span><span>${pesos(importe(p, c))}</span></button>
